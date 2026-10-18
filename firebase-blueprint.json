@@ -1,0 +1,128 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile, plan tier, and security preferences.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique Firebase Authentication UID."
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Display name of the user."
+        },
+        "plan": {
+          "type": "string",
+          "enum": ["free", "weekly", "monthly", "yearly"],
+          "description": "Current active subscription plan."
+        },
+        "appLockEnabled": {
+          "type": "boolean",
+          "description": "Whether application PIN lock is enabled."
+        },
+        "autoLockTimeout": {
+          "type": "string",
+          "enum": ["Immediately", "After 30 seconds", "After 1 minute", "After 5 minutes"],
+          "description": "Idle duration before re-locking private space."
+        },
+        "biometricsEnabled": {
+          "type": "boolean",
+          "description": "Whether fingerprint / biometric prompt is allowed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user account was provisioned."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user profile was last updated."
+        }
+      },
+      "required": ["userId", "email", "fullName", "plan", "appLockEnabled", "autoLockTimeout", "biometricsEnabled", "createdAt", "updatedAt"]
+    },
+    "Clone": {
+      "title": "Clone",
+      "description": "Cloned application configuration with sandbox isolation parameters.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique clone identifier."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner user ID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the cloned application."
+        },
+        "packageName": {
+          "type": "string",
+          "description": "Android package name of the target app."
+        },
+        "accountLabel": {
+          "type": "string",
+          "description": "Custom label for the cloned account."
+        },
+        "cloneNumber": {
+          "type": "integer",
+          "description": "Sequence index of the cloned instance."
+        },
+        "category": {
+          "type": "string",
+          "description": "App category: Messaging, Social, Games, Other."
+        },
+        "iconKey": {
+          "type": "string",
+          "description": "Icon vector identifier key."
+        },
+        "isPrivateSpace": {
+          "type": "boolean",
+          "description": "Whether the clone is isolated in Private Space."
+        },
+        "storageUsageMb": {
+          "type": "number",
+          "description": "Megabytes of data stored by the clone."
+        },
+        "cacheUsageMb": {
+          "type": "number",
+          "description": "Megabytes of temporary cache used."
+        },
+        "status": {
+          "type": "string",
+          "description": "Execution status: Ready, Idle, or Isolated."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the clone was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the clone metadata was last modified."
+        }
+      },
+      "required": ["id", "userId", "name", "packageName", "accountLabel", "cloneNumber", "category", "iconKey", "isPrivateSpace", "storageUsageMb", "cacheUsageMb", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Root user profile document storing security and subscription settings."
+    },
+    "/users/{userId}/clones/{cloneId}": {
+      "schema": "Clone",
+      "description": "Subcollection of cloned application instances belonging to the authenticated user."
+    }
+  }
+}

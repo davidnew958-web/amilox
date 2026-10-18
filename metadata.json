@@ -1,0 +1,6 @@
+{
+  "name": "Multiclonx",
+  "description": "Multi-account manager to run multiple accounts for supported applications on a single Android device.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

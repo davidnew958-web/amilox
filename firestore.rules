@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['userId', 'email', 'fullName', 'plan', 'appLockEnabled', 'autoLockTimeout', 'biometricsEnabled', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'email', 'fullName', 'plan', 'appLockEnabled', 'autoLockTimeout', 'biometricsEnabled', 'createdAt', 'updatedAt'])
+        && data.userId is string && data.userId == request.auth.uid
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 200
+        && data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 100
+        && data.plan in ['free', 'weekly', 'monthly', 'yearly']
+        && data.appLockEnabled is bool
+        && data.autoLockTimeout in ['Immediately', 'After 30 seconds', 'After 1 minute', 'After 5 minutes']
+        && data.biometricsEnabled is bool
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidClone(data) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'packageName', 'accountLabel', 'cloneNumber', 'category', 'iconKey', 'isPrivateSpace', 'storageUsageMb', 'cacheUsageMb', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'name', 'packageName', 'accountLabel', 'cloneNumber', 'category', 'iconKey', 'isPrivateSpace', 'storageUsageMb', 'cacheUsageMb', 'status', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id.size() > 0
+        && data.userId is string && data.userId == request.auth.uid
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.packageName is string && data.packageName.size() > 0 && data.packageName.size() <= 200
+        && data.accountLabel is string && data.accountLabel.size() > 0 && data.accountLabel.size() <= 100
+        && data.cloneNumber is int && data.cloneNumber >= 1
+        && data.category is string && data.category.size() > 0
+        && data.iconKey is string && data.iconKey.size() > 0
+        && data.isPrivateSpace is bool
+        && (data.storageUsageMb is int || data.storageUsageMb is float)
+        && (data.cacheUsageMb is int || data.cacheUsageMb is float)
+        && data.status is string
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId)
+                    && request.resource.data.userId == resource.data.userId
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId);
+
+      match /clones/{cloneId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+                      && request.resource.data.userId == userId
+                      && isValidClone(request.resource.data);
+        allow update: if isOwner(userId)
+                      && request.resource.data.userId == resource.data.userId
+                      && request.resource.data.createdAt == resource.data.createdAt
+                      && isValidClone(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
