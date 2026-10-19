@@ -14,7 +14,53 @@ import java.util.Locale
 object DeviceAppsManager {
 
     /**
-     * Queries the Android system for real installed launcher applications and browsers on this device.
+     * Resolves the dedicated isolated web container URL for supported services.
+     * These apps can run in a genuine isolated WebView container with dedicated
+     * session storage, cookies, and local database without violating Android security boundaries.
+     */
+    fun getWebContainerUrl(packageName: String): String? {
+        val p = packageName.lowercase()
+        return when {
+            p.contains("whatsapp") -> "https://web.whatsapp.com"
+            p.contains("telegram") || p.contains("challegram") -> "https://web.telegram.org"
+            p.contains("signal") -> "https://signal.org"
+            p.contains("instagram") -> "https://www.instagram.com"
+            p.contains("facebook.katana") || p.contains("facebook.lite") -> "https://m.facebook.com"
+            p.contains("facebook.orca") || p.contains("messenger") -> "https://www.messenger.com"
+            p.contains("discord") -> "https://discord.com/app"
+            p.contains("twitter") || p.contains("tweetdeck") -> "https://x.com"
+            p.contains("reddit") -> "https://www.reddit.com"
+            p.contains("musically") || p.contains("tiktok") -> "https://www.tiktok.com"
+            p.contains("snapchat") -> "https://web.snapchat.com"
+            p.contains("threads") -> "https://www.threads.net"
+            p.contains("slack") -> "https://app.slack.com"
+            p.contains("linkedin") -> "https://www.linkedin.com"
+            p.contains("pinterest") -> "https://www.pinterest.com"
+            p.contains("tumblr") -> "https://www.tumblr.com"
+            p.contains("gmail") || p.contains("google.android.gm") -> "https://mail.google.com"
+            p.contains("outlook") || p.contains("hotmail") -> "https://outlook.live.com"
+            p.contains("yahoo.mobile.client.android.mail") || p.contains("yahoomail") -> "https://mail.yahoo.com"
+            p.contains("spotify") -> "https://open.spotify.com"
+            p.contains("twitch") -> "https://m.twitch.tv"
+            p.contains("youtube") -> "https://m.youtube.com"
+            p.contains("amazon") -> "https://www.amazon.com"
+            p.contains("ebay") -> "https://www.ebay.com"
+            p.contains("aliexpress") -> "https://www.aliexpress.com"
+            p.contains("netflix") -> "https://www.netflix.com"
+            p.contains("trello") -> "https://trello.com"
+            p.contains("notion") -> "https://www.notion.so"
+            p.contains("github") -> "https://github.com"
+            p.contains("chrome") || p.contains("firefox") || p.contains("browser") ||
+            p.contains("edge") || p.contains("opera") || p.contains("brave") ||
+            p.contains("duckduckgo") || p.contains("sbrowser") || p.contains("webview") ||
+            p.contains("chromium") || p.contains("search") -> "https://www.google.com"
+            else -> null
+        }
+    }
+
+    /**
+     * Queries the Android system for real installed applications and browsers on this phone.
+     * No fake apps or placeholder catalog entries are added.
      */
     fun getInstalledApps(context: Context): List<AppCatalogItem> {
         val packageManager = context.packageManager
@@ -80,14 +126,6 @@ object DeviceAppsManager {
             }
         }
 
-        // 3. Ensure popular catalog items (WhatsApp, Instagram, Telegram, etc.) are always available in catalog
-        for (catalogItem in SampleAppsData.catalog) {
-            if (!seenPackages.contains(catalogItem.packageName)) {
-                seenPackages.add(catalogItem.packageName)
-                result.add(catalogItem)
-            }
-        }
-
         // Sort alphabetically by app name
         return result.sortedBy { it.name.lowercase() }
     }
@@ -110,19 +148,27 @@ object DeviceAppsManager {
             45.0f
         }
 
-        val iconKey = mapToKnownIconKey(pkg)
+        val webUrl = getWebContainerUrl(pkg)
+        val isCompatible = webUrl != null
+        val compatibility = if (isCompatible) CompatibilityStatus.COMPATIBLE else CompatibilityStatus.UNSUPPORTED
+        val description = if (isCompatible) {
+            "Supported for isolated container session with separate data & cookies."
+        } else {
+            "Native binary APK. Android OS prevents user-space cloning without a Managed Work Profile."
+        }
 
         result.add(
             AppCatalogItem(
                 name = label,
                 packageName = pkg,
                 category = category,
-                compatibility = CompatibilityStatus.COMPATIBLE,
-                description = "Real app installed on your phone. Ready for multi-account cloning.",
-                iconKey = iconKey,
+                compatibility = compatibility,
+                description = description,
+                iconKey = pkg,
                 defaultStorageMb = String.format(Locale.US, "%.1f", approximateStorageMb).toFloat(),
-                supportedMultiClones = true,
-                isDeviceInstalled = true
+                supportedMultiClones = isCompatible,
+                isDeviceInstalled = true,
+                webContainerUrl = webUrl
             )
         )
     }
@@ -132,7 +178,11 @@ object DeviceAppsManager {
         return p.contains("browser") || p.contains("chrome") || p.contains("firefox") || 
                p.contains("edge") || p.contains("opera") || p.contains("safari") || 
                p.contains("whatsapp") || p.contains("telegram") || p.contains("instagram") ||
-               p.contains("facebook") || p.contains("discord") || p.contains("tiktok")
+               p.contains("facebook") || p.contains("discord") || p.contains("tiktok") ||
+               p.contains("twitter") || p.contains("reddit") || p.contains("slack") ||
+               p.contains("linkedin") || p.contains("pinterest") || p.contains("spotify") ||
+               p.contains("youtube") || p.contains("amazon") || p.contains("mail") ||
+               p.contains("webview") || p.contains("search") || p.contains("duckduckgo")
     }
 
     private fun detectCategory(label: String, pkg: String, appInfo: ApplicationInfo?): AppCategory {
@@ -162,30 +212,6 @@ object DeviceAppsManager {
             text.contains("racing") || text.contains("arcade") -> AppCategory.GAMES
 
             else -> AppCategory.OTHER
-        }
-    }
-
-    private fun mapToKnownIconKey(pkg: String): String {
-        val p = pkg.lowercase()
-        return when {
-            p.contains("whatsapp") -> "whatsapp"
-            p.contains("instagram") -> "instagram"
-            p.contains("facebook.katana") || (p.contains("facebook") && !p.contains("orca")) -> "facebook"
-            p.contains("telegram") -> "telegram"
-            p.contains("tiktok") || p.contains("musically") -> "tiktok"
-            p.contains("discord") -> "discord"
-            p.contains("twitter") -> "x_twitter"
-            p.contains("facebook.orca") || p.contains("messenger") -> "messenger"
-            p.contains("clashofclans") -> "clash_of_clans"
-            p.contains("roblox") -> "roblox"
-            p.contains("snapchat") -> "snapchat"
-            p.contains("reddit") -> "reddit"
-            p.contains("chrome") || p.contains("browser") -> "chrome"
-            p.contains("youtube") -> "youtube"
-            p.contains("gmail") || p.contains("mail") -> "mail"
-            p.contains("settings") -> "settings"
-            p.contains("camera") -> "camera"
-            else -> pkg
         }
     }
 }

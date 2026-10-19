@@ -23,7 +23,8 @@ data class AppCatalogItem(
     val iconKey: String,
     val defaultStorageMb: Float = 48.5f,
     val supportedMultiClones: Boolean = true,
-    val isDeviceInstalled: Boolean = false
+    val isDeviceInstalled: Boolean = false,
+    val webContainerUrl: String? = null
 )
 
 data class ClonedApp(
@@ -39,7 +40,9 @@ data class ClonedApp(
     val cacheUsageMb: Float = 34.2f,
     val compatibility: CompatibilityStatus = CompatibilityStatus.COMPATIBLE,
     val status: String = "Idle",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val webContainerUrl: String? = null,
+    val containerPath: String? = null
 )
 
 enum class PlanTier(
@@ -61,11 +64,11 @@ enum class PlanTier(
         period = "Forever",
         description = "For everyday users.",
         features = listOf(
-            "Clone up to 2 apps",
-            "Ads supported"
+            "Multiple copies per app",
+            "Isolated local storage"
         ),
-        maxClones = 2,
-        hasAds = true
+        maxClones = 999,
+        hasAds = false
     ),
     WEEKLY(
         id = "weekly",
@@ -153,4 +156,5 @@ sealed interface ScreenDestination {
     data class VerifyEmail(val email: String) : ScreenDestination
     data object ForgotPassword : ScreenDestination
     data object ComponentShowcase : ScreenDestination
+    data class IsolatedContainer(val cloneId: String) : ScreenDestination
 }

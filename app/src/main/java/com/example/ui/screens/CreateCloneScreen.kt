@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,11 +44,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AppCatalogItem
+import com.example.model.CompatibilityStatus
 import com.example.ui.components.AppIconView
 import com.example.ui.components.CompatibilityBadge
 import com.example.ui.components.GradientButton
@@ -58,6 +61,7 @@ import com.example.ui.theme.CardBackground
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DeepIndigo
 import com.example.ui.theme.ElevatedSurface
+import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.MainBackground
 import com.example.ui.theme.PrimaryPurple
 import com.example.ui.theme.PrimaryText
@@ -73,10 +77,23 @@ fun CreateCloneScreen(
     viewModel: MulticlonxViewModel,
     modifier: Modifier = Modifier
 ) {
+    val existingClones = remember(uiState.clonedApps, appItem.packageName) {
+        uiState.clonedApps.filter { it.packageName == appItem.packageName }
+    }
+    val existingCount = existingClones.size
+    val nextCloneNumber = existingCount + 1
+
     var accountLabel by remember { mutableStateOf("") }
     var isPrivateSpace by remember { mutableStateOf(false) }
+    var numberOfCopies by remember { androidx.compose.runtime.mutableIntStateOf(1) }
 
-    val presetLabels = listOf("Work Account", "Personal Account", "Second Account", "Gaming")
+    val presetLabels = listOf(
+        "Account #$nextCloneNumber",
+        "Work Account",
+        "Personal Account",
+        "Second Account",
+        "Gaming"
+    )
 
     Box(
         modifier = modifier
@@ -113,7 +130,7 @@ fun CreateCloneScreen(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Text(
-                    text = "Create Clone",
+                    text = if (existingCount > 0) "Add Another Copy (${existingCount} Active)" else "Create Clone",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = PrimaryText
@@ -127,7 +144,12 @@ fun CreateCloneScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                AppIconView(iconKey = appItem.iconKey, size = 80.dp, cloneBadgeNumber = 2)
+                AppIconView(
+                    iconKey = appItem.iconKey,
+                    packageName = appItem.packageName,
+                    size = 80.dp,
+                    cloneBadgeNumber = nextCloneNumber
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -149,9 +171,102 @@ fun CreateCloneScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 CompatibilityBadge(status = appItem.compatibility)
+
+                if (existingCount > 0) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(ElevatedSurface)
+                            .border(1.dp, CyanAccent.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "You have $existingCount active copy/copies • Creating #${nextCloneNumber}",
+                            color = CyanAccent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Number of Copies Selector Card
+            MulticlonxCard(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = CardBackground
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = "Number of Copies",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = PrimaryText
+                        )
+                        Text(
+                            text = "Create multiple distinct accounts at once",
+                            fontSize = 12.sp,
+                            color = SecondaryText
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (numberOfCopies > 1) ElevatedSurface else ElevatedSurface.copy(alpha = 0.4f))
+                                .clickable(enabled = numberOfCopies > 1) { numberOfCopies-- },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "-",
+                                color = if (numberOfCopies > 1) PrimaryText else SecondaryText,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Text(
+                            text = "$numberOfCopies",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanAccent,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (numberOfCopies < 5) ElevatedSurface else ElevatedSurface.copy(alpha = 0.4f))
+                                .clickable(enabled = numberOfCopies < 5) { numberOfCopies++ },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "+",
+                                color = if (numberOfCopies < 5) PrimaryText else SecondaryText,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Account Label Input Section
             Text(
@@ -167,7 +282,10 @@ fun CreateCloneScreen(
                 value = accountLabel,
                 onValueChange = { accountLabel = it },
                 placeholder = {
-                    Text("e.g. Work Account", color = SecondaryText)
+                    Text(
+                        text = if (numberOfCopies > 1) "e.g. Account (will append #1, #2...)" else "Account #$nextCloneNumber",
+                        color = SecondaryText
+                    )
                 },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = CardBackground,
@@ -273,23 +391,26 @@ fun CreateCloneScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Privacy Information Card
+            val context = LocalContext.current
+            val isCompatible = appItem.compatibility == CompatibilityStatus.COMPATIBLE && appItem.webContainerUrl != null
+
+            // Architecture / Sandbox Information Card
             MulticlonxCard(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = SecondaryBackground,
-                borderColor = BorderColor
+                borderColor = if (isCompatible) BorderColor else ErrorRed.copy(alpha = 0.5f)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.VerifiedUser,
+                            imageVector = if (isCompatible) Icons.Default.VerifiedUser else Icons.Default.Warning,
                             contentDescription = null,
-                            tint = CyanAccent,
+                            tint = if (isCompatible) CyanAccent else ErrorRed,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Sandbox Isolation Notice",
+                            text = if (isCompatible) "Isolated Container Support" else "Native Binary - Cloning Restricted",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = PrimaryText
@@ -297,7 +418,11 @@ fun CreateCloneScreen(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "This clone operates within a private local data directory. Login tokens, cache files, and app databases will remain completely isolated from other accounts.",
+                        text = if (isCompatible) {
+                            "This clone operates within an isolated session partition with dedicated cookies, localStorage, and storage. Completely isolated from your primary account."
+                        } else {
+                            "Android OS security enforcement (Linux UID isolation, SELinux, and hardened ART) prevents unprivileged user-space applications from virtualizing secondary native binary instances without a Managed Work Profile."
+                        },
                         fontSize = 12.sp,
                         color = SecondaryText,
                         lineHeight = 18.sp
@@ -307,45 +432,45 @@ fun CreateCloneScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Creation in progress indicator
-            if (uiState.isCreatingClone) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            // Primary and Secondary Action Buttons
+            if (isCompatible) {
+                val buttonText = when {
+                    numberOfCopies > 1 -> "Create $numberOfCopies Isolated Copies"
+                    existingCount > 0 -> "Create Isolated Copy #$nextCloneNumber"
+                    else -> "Create Isolated Clone"
+                }
+                GradientButton(
+                    text = buttonText,
+                    onClick = {
+                        viewModel.startCloneCreation(
+                            appItem = appItem,
+                            accountLabel = accountLabel,
+                            isPrivate = isPrivateSpace,
+                            context = context,
+                            count = numberOfCopies
+                        )
+                    },
+                    isLoading = uiState.isCreatingClone,
+                    testTag = "submit_create_clone_button"
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(ElevatedSurface)
+                        .border(1.dp, BorderColor, RoundedCornerShape(14.dp))
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Creating isolated sandbox container...",
+                        text = "Native Binary - Cloning Unsupported",
+                        color = SecondaryText,
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = CyanAccent
+                        fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    LinearProgressIndicator(
-                        progress = uiState.cloneCreationProgress,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                        color = CyanAccent,
-                        trackColor = ElevatedSurface
-                    )
-                    Spacer(modifier = Modifier.height(18.dp))
                 }
             }
-
-            // Primary and Secondary Action Buttons
-            GradientButton(
-                text = "Create Clone",
-                onClick = {
-                    viewModel.startCloneCreation(
-                        appItem = appItem,
-                        accountLabel = accountLabel,
-                        isPrivate = isPrivateSpace
-                    )
-                },
-                isLoading = uiState.isCreatingClone,
-                testTag = "submit_create_clone_button"
-            )
 
             Spacer(modifier = Modifier.height(10.dp))
 

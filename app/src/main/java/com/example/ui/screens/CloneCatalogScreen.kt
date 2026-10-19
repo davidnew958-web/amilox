@@ -248,6 +248,7 @@ fun CloneCatalogScreen(
                 items(filteredCatalog, key = { it.packageName }) { appItem ->
                     val isSelected = uiState.selectedCatalogApps.contains(appItem.packageName)
                     val isUnsupported = appItem.compatibility == CompatibilityStatus.UNSUPPORTED
+                    val existingCount = uiState.clonedApps.count { it.packageName == appItem.packageName }
 
                     MulticlonxCard(
                         modifier = Modifier
@@ -260,7 +261,7 @@ fun CloneCatalogScreen(
                             if (!isUnsupported) {
                                 viewModel.navigateTo(ScreenDestination.CreateClone(appItem))
                             } else {
-                                viewModel.showToast("This app isn't supported on your device.")
+                                viewModel.showToast("${appItem.name} is a native APK. Android restricts cloning native binaries without a Work Profile.")
                             }
                         }
                     ) {
@@ -274,7 +275,12 @@ fun CloneCatalogScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.Top
                             ) {
-                                AppIconView(iconKey = appItem.iconKey, size = 46.dp)
+                                AppIconView(
+                                    iconKey = appItem.iconKey,
+                                    packageName = appItem.packageName,
+                                    size = 46.dp,
+                                    cloneBadgeNumber = if (existingCount > 0) existingCount else null
+                                )
 
                                 if (!isUnsupported) {
                                     Checkbox(
@@ -302,6 +308,16 @@ fun CloneCatalogScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+
+                            if (existingCount > 0) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "$existingCount active ${if (existingCount == 1) "copy" else "copies"}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = CyanAccent
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(6.dp))
 

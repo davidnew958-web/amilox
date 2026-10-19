@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
@@ -433,7 +434,8 @@ fun HomeScreen(
                         onDetails = { viewModel.navigateTo(ScreenDestination.ClonedAppDetail(clone.id)) },
                         onRename = { viewModel.promptRenameClone(clone) },
                         onTogglePrivate = { viewModel.togglePrivateSpaceForClone(clone.id) },
-                        onRemove = { viewModel.promptDeleteClone(clone) }
+                        onRemove = { viewModel.promptDeleteClone(clone) },
+                        onDuplicate = { viewModel.duplicateClone(clone) }
                     )
                 }
             }
@@ -575,7 +577,8 @@ fun ClonedAppCard(
     onDetails: () -> Unit,
     onRename: () -> Unit,
     onTogglePrivate: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onDuplicate: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -601,6 +604,7 @@ fun ClonedAppCard(
             ) {
                 AppIconView(
                     iconKey = clone.iconKey,
+                    packageName = clone.packageName,
                     size = 48.dp,
                     cloneBadgeNumber = clone.cloneNumber,
                     isPrivateSpace = clone.isPrivateSpace
@@ -631,6 +635,24 @@ fun ClonedAppCard(
                             onClick = {
                                 menuExpanded = false
                                 onOpen()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        tint = CyanAccent,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Copy App (+1)", color = PrimaryText)
+                                }
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onDuplicate()
                             }
                         )
                         DropdownMenuItem(
@@ -695,30 +717,54 @@ fun ClonedAppCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Quick launch pill
+            // Action row: Quick launch pill + Quick Copy button
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(ElevatedSurface)
-                    .clickable { onOpen() }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = CyanAccent,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Launch",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = CyanAccent
-                )
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ElevatedSurface)
+                        .clickable { onOpen() }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = CyanAccent,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Launch",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = CyanAccent
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ElevatedSurface)
+                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                        .clickable { onDuplicate() }
+                        .testTag("duplicate_clone_${clone.id}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy App Again",
+                        tint = CyanAccent,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
             }
         }
     }

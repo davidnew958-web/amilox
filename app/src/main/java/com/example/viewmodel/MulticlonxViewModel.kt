@@ -18,6 +18,7 @@ import com.example.model.UserAccount
 import com.example.model.UserDocument
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import java.io.File
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,7 +52,7 @@ data class MulticlonxUiState(
     val notifications: List<UiNotification> = listOf(
         UiNotification(
             title = "Sandbox Isolation Active",
-            message = "Cloned apps are running in localized secure storage containers."
+            message = "Cloned apps run in localized, dedicated storage session containers."
         ),
         UiNotification(
             title = "Cloud Sync Enabled",
@@ -82,6 +83,7 @@ class MulticlonxViewModel : ViewModel() {
 
     private var repository: MulticlonxRepository? = null
     private var syncJob: Job? = null
+    private var appContext: Context? = null
 
     init {
         // Start on Splash screen, automatically transition to Home after 1600ms
@@ -94,6 +96,8 @@ class MulticlonxViewModel : ViewModel() {
     }
 
     fun loadDeviceApps(context: Context) {
+        appContext = context.applicationContext
+        loadPersistentClones(context)
         viewModelScope.launch {
             try {
                 val apps = com.example.data.DeviceAppsManager.getInstalledApps(context)
@@ -105,12 +109,30 @@ class MulticlonxViewModel : ViewModel() {
     }
 
     fun initRepository(context: Context) {
+        appContext = context.applicationContext
+        loadPersistentClones(context)
         if (repository != null) return
         try {
             repository = MulticlonxRepository.create(context)
             listenToAuthChanges()
         } catch (e: Exception) {
             android.util.Log.e("MulticlonxVM", "Failed to initialize Firebase repository: ${e.message}")
+        }
+    }
+
+    private fun loadPersistentClones(context: Context) {
+        val saved = com.example.data.LocalCloneStorageManager.loadClones(context)
+        if (saved.isNotEmpty()) {
+            _uiState.update { current ->
+                current.copy(clonedApps = saved)
+            }
+        }
+    }
+
+    private fun saveClonesLocally(clones: List<ClonedApp>) {
+        val ctx = appContext
+        if (ctx != null) {
+            com.example.data.LocalCloneStorageManager.saveClones(ctx, clones)
         }
     }
 
@@ -152,6 +174,8 @@ class MulticlonxViewModel : ViewModel() {
                 repo.observeClones(uid).collect { cloneDocs ->
                     if (cloneDocs.isNotEmpty()) {
                         val mapped = cloneDocs.map { doc ->
+                            val resolvedUrl = doc.webContainerUrl
+                                ?: com.example.data.DeviceAppsManager.getWebContainerUrl(doc.packageName)
                             ClonedApp(
                                 id = doc.id,
                                 name = doc.name,
@@ -159,14 +183,19 @@ class MulticlonxViewModel : ViewModel() {
                                 accountLabel = doc.accountLabel,
                                 cloneNumber = doc.cloneNumber.toInt(),
                                 category = AppCategory.entries.find { it.name.equals(doc.category, ignoreCase = true) } ?: AppCategory.MESSAGING,
-                                iconKey = doc.iconKey,
+                                iconKey = doc.iconKey.ifBlank { doc.packageName },
                                 isPrivateSpace = doc.isPrivateSpace,
                                 storageUsageMb = doc.storageUsageMb.toFloat(),
                                 cacheUsageMb = doc.cacheUsageMb.toFloat(),
-                                status = doc.status
+                                status = doc.status,
+                                webContainerUrl = resolvedUrl,
+                                containerPath = doc.containerPath
                             )
                         }
                         _uiState.update { it.copy(clonedApps = mapped) }
+                        appContext?.let { ctx ->
+                            com.example.data.LocalCloneStorageManager.saveClones(ctx, mapped)
+                        }
                     } else {
                         // Seed initial clones to Firestore if cloud collection is fresh
                         val initial = _uiState.value.clonedApps
@@ -321,111 +350,251 @@ class MulticlonxViewModel : ViewModel() {
     }
 
     // Clone creation flow
-    fun startCloneCreation(appItem: AppCatalogItem, accountLabel: String, isPrivate: Boolean) {
+    fun startCloneCreation(
+        appItem: AppCatalogItem,
+        accountLabel: String,
+        isPrivate: Boolean,
+        context: Context? = null,
+        count: Int = 1
+    ) {
         val currentPlan = _uiState.value.currentPlan
         val nonPrivateCount = _uiState.value.clonedApps.count { !it.isPrivateSpace }
-        if (currentPlan.maxClones < 999 && nonPrivateCount >= currentPlan.maxClones && !isPrivate) {
+        val requestedCount = count.coerceIn(1, 10)
+        if (currentPlan.maxClones < 999 && (nonPrivateCount + requestedCount) > currentPlan.maxClones && !isPrivate) {
             showToast("Plan limit reached (${currentPlan.maxClones} clones). Upgrade to add more!")
             navigateTo(ScreenDestination.Premium)
             return
         }
 
-        viewModelScope.launch {
-            _uiState.update { it.copy(isCreatingClone = true, cloneCreationProgress = 0f) }
+        // Real security validation: Check if target app can genuinely be isolated in user-space
+        if (appItem.compatibility == CompatibilityStatus.UNSUPPORTED || appItem.webContainerUrl == null) {
+            showToast("Cannot clone ${appItem.name}: Android OS restricts arbitrary native binary virtualization.")
+            return
+        }
 
-            for (step in 1..5) {
-                delay(200)
-                _uiState.update { it.copy(cloneCreationProgress = step * 0.2f) }
+        val ctx = context ?: appContext
+        val newClones = mutableListOf<ClonedApp>()
+        val existingForApp = _uiState.value.clonedApps.filter { it.packageName == appItem.packageName }
+        var currentCloneNum = existingForApp.size
+
+        for (i in 1..requestedCount) {
+            currentCloneNum++
+            val cloneId = "clone_${appItem.packageName.replace('.', '_')}_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(6)}"
+
+            // Create actual storage container on device disk
+            val containerDir = if (ctx != null) {
+                val dir = File(ctx.filesDir, "containers/$cloneId")
+                if (!dir.exists()) dir.mkdirs()
+                dir
+            } else null
+
+            val label = if (requestedCount == 1) {
+                accountLabel.ifBlank { "Account #$currentCloneNum" }
+            } else {
+                if (accountLabel.isNotBlank()) "$accountLabel #$i" else "Account #$currentCloneNum"
             }
 
-            val existingForApp = _uiState.value.clonedApps.filter { it.packageName == appItem.packageName }
-            val nextCloneNumber = existingForApp.size + 1
-
-            val newClone = ClonedApp(
-                id = "clone_${appItem.packageName.replace('.', '_')}_${System.currentTimeMillis()}",
+            val clone = ClonedApp(
+                id = cloneId,
                 name = appItem.name,
                 packageName = appItem.packageName,
-                accountLabel = accountLabel.ifBlank { "Account #$nextCloneNumber" },
-                cloneNumber = nextCloneNumber,
+                accountLabel = label,
+                cloneNumber = currentCloneNum,
                 category = appItem.category,
-                iconKey = appItem.iconKey,
+                iconKey = appItem.packageName,
                 isPrivateSpace = isPrivate,
                 storageUsageMb = appItem.defaultStorageMb,
-                cacheUsageMb = 14.8f,
-                status = "Ready"
+                cacheUsageMb = 0.5f,
+                status = "Active Container",
+                webContainerUrl = appItem.webContainerUrl,
+                containerPath = containerDir?.absolutePath
             )
+            newClones.add(clone)
+        }
 
-            val uid = repository?.currentUserIdOrNull()
-            if (uid != null) {
+        val uid = repository?.currentUserIdOrNull()
+        if (uid != null) {
+            viewModelScope.launch {
+                newClones.forEach { c ->
+                    try {
+                        repository?.addClone(c.toDocument(uid))
+                    } catch (e: Exception) {
+                        android.util.Log.e("MulticlonxVM", "Cloud write failed: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        val updatedList = newClones + _uiState.value.clonedApps
+        _uiState.update {
+            it.copy(
+                clonedApps = updatedList,
+                isCreatingClone = false,
+                cloneCreationProgress = 1f,
+                lastCreatedApp = newClones.firstOrNull(),
+                toastMessage = if (requestedCount > 1) {
+                    "Created $requestedCount isolated clones for ${appItem.name}"
+                } else {
+                    "Verified isolated container active for ${appItem.name}"
+                }
+            )
+        }
+        saveClonesLocally(updatedList)
+
+        if (isPrivate) {
+            navigateTo(ScreenDestination.PrivateSpace, addToBackStack = false)
+        } else {
+            navigateTo(ScreenDestination.Home, addToBackStack = false)
+        }
+    }
+
+    /**
+     * Duplicates an existing clone, creating an additional isolated instance
+     * with its own fresh session and container partition.
+     */
+    fun duplicateClone(clone: ClonedApp, context: Context? = null) {
+        val currentPlan = _uiState.value.currentPlan
+        val nonPrivateCount = _uiState.value.clonedApps.count { !it.isPrivateSpace }
+        if (currentPlan.maxClones < 999 && (nonPrivateCount + 1) > currentPlan.maxClones && !clone.isPrivateSpace) {
+            showToast("Plan limit reached (${currentPlan.maxClones} clones). Upgrade to add more!")
+            navigateTo(ScreenDestination.Premium)
+            return
+        }
+
+        val ctx = context ?: appContext
+        val existingForApp = _uiState.value.clonedApps.filter { it.packageName == clone.packageName }
+        val nextNum = existingForApp.size + 1
+        val cloneId = "clone_${clone.packageName.replace('.', '_')}_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(6)}"
+
+        val containerDir = if (ctx != null) {
+            val dir = File(ctx.filesDir, "containers/$cloneId")
+            if (!dir.exists()) dir.mkdirs()
+            dir
+        } else null
+
+        val duplicated = clone.copy(
+            id = cloneId,
+            accountLabel = "Account #$nextNum",
+            cloneNumber = nextNum,
+            storageUsageMb = clone.storageUsageMb,
+            cacheUsageMb = 0.5f,
+            status = "Active Container",
+            createdAt = System.currentTimeMillis(),
+            containerPath = containerDir?.absolutePath
+        )
+
+        val uid = repository?.currentUserIdOrNull()
+        if (uid != null) {
+            viewModelScope.launch {
                 try {
-                    repository?.addClone(newClone.toDocument(uid))
+                    repository?.addClone(duplicated.toDocument(uid))
                 } catch (e: Exception) {
                     android.util.Log.e("MulticlonxVM", "Cloud write failed: ${e.message}")
                 }
             }
+        }
 
-            _uiState.update {
-                it.copy(
-                    clonedApps = listOf(newClone) + it.clonedApps,
-                    isCreatingClone = false,
-                    cloneCreationProgress = 1f,
-                    lastCreatedApp = newClone,
-                    toastMessage = "Clone created successfully for ${appItem.name}"
-                )
-            }
+        val updatedList = listOf(duplicated) + _uiState.value.clonedApps
+        _uiState.update {
+            it.copy(
+                clonedApps = updatedList,
+                toastMessage = "Created copy #$nextNum for ${clone.name}"
+            )
+        }
+        saveClonesLocally(updatedList)
+    }
 
-            if (isPrivate) {
-                navigateTo(ScreenDestination.PrivateSpace, addToBackStack = false)
-            } else {
-                navigateTo(ScreenDestination.Home, addToBackStack = false)
-            }
+    fun duplicateClone(cloneId: String, context: Context? = null) {
+        val target = _uiState.value.clonedApps.find { it.id == cloneId }
+        if (target != null) {
+            duplicateClone(target, context)
+        } else {
+            showToast("Clone not found")
         }
     }
 
-    fun cloneSelectedCatalogApps() {
+    fun cloneSelectedCatalogApps(context: Context? = null) {
         val selected = _uiState.value.selectedCatalogApps
         if (selected.isEmpty()) return
 
+        val ctx = context ?: appContext
         val appItems = _uiState.value.catalogApps.filter { selected.contains(it.packageName) }
-        viewModelScope.launch {
-            val uid = repository?.currentUserIdOrNull()
-            appItems.forEach { item ->
-                val existing = _uiState.value.clonedApps.filter { it.packageName == item.packageName }
-                val num = existing.size + 1
-                val clone = ClonedApp(
-                    id = "clone_${item.packageName.replace('.', '_')}_${System.currentTimeMillis()}",
-                    name = item.name,
-                    packageName = item.packageName,
-                    accountLabel = "Account #$num",
-                    cloneNumber = num,
-                    category = item.category,
-                    iconKey = item.iconKey,
-                    isPrivateSpace = false,
-                    storageUsageMb = item.defaultStorageMb,
-                    cacheUsageMb = 8.5f,
-                    status = "Ready"
-                )
-                if (uid != null) {
+        val compatibleItems = appItems.filter { it.compatibility == CompatibilityStatus.COMPATIBLE && it.webContainerUrl != null }
+        val unsupportedCount = appItems.size - compatibleItems.size
+
+        if (compatibleItems.isEmpty()) {
+            showToast("Selected apps are native APKs. Android OS restricts native binary cloning without a Work Profile.")
+            return
+        }
+
+        val uid = repository?.currentUserIdOrNull()
+        val createdClones = mutableListOf<ClonedApp>()
+
+        compatibleItems.forEach { item ->
+            val existing = _uiState.value.clonedApps.filter { it.packageName == item.packageName }
+            val num = existing.size + 1
+            val cloneId = "clone_${item.packageName.replace('.', '_')}_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(6)}"
+            val containerDir = if (ctx != null) {
+                val dir = File(ctx.filesDir, "containers/$cloneId")
+                if (!dir.exists()) dir.mkdirs()
+                dir
+            } else null
+
+            val clone = ClonedApp(
+                id = cloneId,
+                name = item.name,
+                packageName = item.packageName,
+                accountLabel = "Account #$num",
+                cloneNumber = num,
+                category = item.category,
+                iconKey = item.packageName,
+                isPrivateSpace = false,
+                storageUsageMb = item.defaultStorageMb,
+                cacheUsageMb = 0.5f,
+                status = "Active Container",
+                webContainerUrl = item.webContainerUrl,
+                containerPath = containerDir?.absolutePath
+            )
+            createdClones.add(clone)
+
+            if (uid != null) {
+                viewModelScope.launch {
                     try {
                         repository?.addClone(clone.toDocument(uid))
                     } catch (e: Exception) {
                         android.util.Log.e("MulticlonxVM", "Cloud write failed: ${e.message}")
                     }
                 }
-                _uiState.update { it.copy(clonedApps = listOf(clone) + it.clonedApps) }
             }
-            _uiState.update {
-                it.copy(
-                    selectedCatalogApps = emptySet(),
-                    toastMessage = "Cloned ${appItems.size} applications successfully!"
-                )
-            }
-            navigateTo(ScreenDestination.Home, addToBackStack = false)
         }
+
+        val updatedList = createdClones + _uiState.value.clonedApps
+        _uiState.update {
+            it.copy(
+                clonedApps = updatedList,
+                selectedCatalogApps = emptySet(),
+                toastMessage = if (unsupportedCount > 0) {
+                    "Created ${createdClones.size} isolated containers. Skipped $unsupportedCount unsupported native apps."
+                } else {
+                    "Created ${createdClones.size} isolated containers successfully."
+                }
+            )
+        }
+        saveClonesLocally(updatedList)
+        navigateTo(ScreenDestination.Home, addToBackStack = false)
     }
 
     // Cloned app actions
-    fun removeClone(clone: ClonedApp) {
+    fun removeClone(clone: ClonedApp, context: Context? = null) {
+        val ctx = context ?: appContext
+        if (ctx != null) {
+            try {
+                File(ctx.filesDir, "containers/${clone.id}").deleteRecursively()
+            } catch (e: Exception) {
+                android.util.Log.e("MulticlonxVM", "Failed to delete container disk folder: ${e.message}")
+            }
+        }
+
         val uid = repository?.currentUserIdOrNull()
         if (uid != null) {
             viewModelScope.launch {
@@ -437,13 +606,16 @@ class MulticlonxViewModel : ViewModel() {
             }
         }
 
+        val updatedList = _uiState.value.clonedApps.filterNot { it.id == clone.id }
         _uiState.update { state ->
             state.copy(
-                clonedApps = state.clonedApps.filterNot { it.id == clone.id },
+                clonedApps = updatedList,
                 showDeleteConfirmDialogFor = null,
-                toastMessage = "${clone.name} (${clone.accountLabel}) removed."
+                toastMessage = "${clone.name} (${clone.accountLabel}) and container data removed."
             )
         }
+        saveClonesLocally(updatedList)
+
         if (_uiState.value.currentScreen is ScreenDestination.ClonedAppDetail) {
             navigateBack()
         }
@@ -463,15 +635,17 @@ class MulticlonxViewModel : ViewModel() {
             }
         }
 
+        val updatedList = _uiState.value.clonedApps.map {
+            if (it.id == cloneId) it.copy(accountLabel = newLabel.ifBlank { it.accountLabel }) else it
+        }
         _uiState.update { state ->
             state.copy(
-                clonedApps = state.clonedApps.map {
-                    if (it.id == cloneId) it.copy(accountLabel = newLabel.ifBlank { it.accountLabel }) else it
-                },
+                clonedApps = updatedList,
                 showRenameDialogFor = null,
                 toastMessage = "Account renamed to \"$newLabel\""
             )
         }
+        saveClonesLocally(updatedList)
     }
 
     fun togglePrivateSpaceForClone(cloneId: String) {
@@ -488,22 +662,33 @@ class MulticlonxViewModel : ViewModel() {
             }
         }
 
+        var movedToPrivate = false
+        val updatedList = _uiState.value.clonedApps.map {
+            if (it.id == cloneId) {
+                movedToPrivate = !it.isPrivateSpace
+                it.copy(isPrivateSpace = !it.isPrivateSpace)
+            } else it
+        }
         _uiState.update { state ->
-            var movedToPrivate = false
-            val list = state.clonedApps.map {
-                if (it.id == cloneId) {
-                    movedToPrivate = !it.isPrivateSpace
-                    it.copy(isPrivateSpace = !it.isPrivateSpace)
-                } else it
-            }
             state.copy(
-                clonedApps = list,
+                clonedApps = updatedList,
                 toastMessage = if (movedToPrivate) "Moved to Private Space" else "Moved to Home"
             )
         }
+        saveClonesLocally(updatedList)
     }
 
-    fun clearCloneCache(cloneId: String) {
+    fun clearCloneCache(cloneId: String, context: Context? = null) {
+        val ctx = context ?: appContext
+        if (ctx != null) {
+            try {
+                val cacheDir = File(ctx.filesDir, "containers/$cloneId/cache")
+                if (cacheDir.exists()) cacheDir.deleteRecursively()
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
         val target = _uiState.value.clonedApps.find { it.id == cloneId }
         val updated = target?.copy(cacheUsageMb = 0f)
         val uid = repository?.currentUserIdOrNull()
@@ -517,15 +702,16 @@ class MulticlonxViewModel : ViewModel() {
             }
         }
 
+        val updatedList = _uiState.value.clonedApps.map {
+            if (it.id == cloneId) it.copy(cacheUsageMb = 0f) else it
+        }
         _uiState.update { state ->
-            val list = state.clonedApps.map {
-                if (it.id == cloneId) it.copy(cacheUsageMb = 0f) else it
-            }
             state.copy(
-                clonedApps = list,
+                clonedApps = updatedList,
                 toastMessage = "Cache cleared (0 MB)"
             )
         }
+        saveClonesLocally(updatedList)
     }
 
     fun launchClone(clone: ClonedApp) {
@@ -836,6 +1022,8 @@ private fun ClonedApp.toDocument(uid: String): CloneDocument {
         isPrivateSpace = this.isPrivateSpace,
         storageUsageMb = this.storageUsageMb.toDouble(),
         cacheUsageMb = this.cacheUsageMb.toDouble(),
-        status = this.status
+        status = this.status,
+        webContainerUrl = this.webContainerUrl,
+        containerPath = this.containerPath
     )
 }

@@ -33,6 +33,8 @@ data class CloneDocument(
     val storageUsageMb: Double = 0.0,
     val cacheUsageMb: Double = 0.0,
     val status: String = "Ready",
+    val webContainerUrl: String? = null,
+    val containerPath: String? = null,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )

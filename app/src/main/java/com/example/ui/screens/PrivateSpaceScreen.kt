@@ -427,7 +427,8 @@ fun PrivateSpaceScreen(
                             onDetails = { viewModel.navigateTo(ScreenDestination.ClonedAppDetail(clone.id)) },
                             onRename = { viewModel.promptRenameClone(clone) },
                             onTogglePrivate = { viewModel.togglePrivateSpaceForClone(clone.id) },
-                            onRemove = { viewModel.promptDeleteClone(clone) }
+                            onRemove = { viewModel.promptDeleteClone(clone) },
+                            onDuplicate = { viewModel.duplicateClone(clone) }
                         )
                     }
                 }

@@ -30,7 +30,7 @@ service cloud.firestore {
 
     function isValidClone(data) {
       return data.keys().hasAll(['id', 'userId', 'name', 'packageName', 'accountLabel', 'cloneNumber', 'category', 'iconKey', 'isPrivateSpace', 'storageUsageMb', 'cacheUsageMb', 'status', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['id', 'userId', 'name', 'packageName', 'accountLabel', 'cloneNumber', 'category', 'iconKey', 'isPrivateSpace', 'storageUsageMb', 'cacheUsageMb', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'name', 'packageName', 'accountLabel', 'cloneNumber', 'category', 'iconKey', 'isPrivateSpace', 'storageUsageMb', 'cacheUsageMb', 'status', 'webContainerUrl', 'containerPath', 'createdAt', 'updatedAt'])
         && data.id is string && data.id.size() > 0
         && data.userId is string && data.userId == request.auth.uid
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
@@ -43,6 +43,8 @@ service cloud.firestore {
         && (data.storageUsageMb is int || data.storageUsageMb is float)
         && (data.cacheUsageMb is int || data.cacheUsageMb is float)
         && data.status is string
+        && (!('webContainerUrl' in data) || data.webContainerUrl == null || data.webContainerUrl is string)
+        && (!('containerPath' in data) || data.containerPath == null || data.containerPath is string)
         && isValidTimestamp(data.createdAt)
         && isValidTimestamp(data.updatedAt);
     }

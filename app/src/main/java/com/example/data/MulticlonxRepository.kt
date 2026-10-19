@@ -136,6 +136,8 @@ class MulticlonxRepository(
             "storageUsageMb" to clone.storageUsageMb,
             "cacheUsageMb" to clone.cacheUsageMb,
             "status" to clone.status,
+            "webContainerUrl" to clone.webContainerUrl,
+            "containerPath" to clone.containerPath,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )
@@ -171,6 +173,8 @@ class MulticlonxRepository(
                 "storageUsageMb" to clone.storageUsageMb,
                 "cacheUsageMb" to clone.cacheUsageMb,
                 "status" to clone.status,
+                "webContainerUrl" to clone.webContainerUrl,
+                "containerPath" to clone.containerPath,
                 "createdAt" to (existingCreatedAt ?: FieldValue.serverTimestamp()),
                 "updatedAt" to FieldValue.serverTimestamp()
             )

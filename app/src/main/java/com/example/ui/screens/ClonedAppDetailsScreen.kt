@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HelpOutline
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCatalogItem
 import com.example.model.ScreenDestination
 import com.example.ui.components.AppIconView
 import com.example.ui.components.GradientButton
@@ -154,6 +156,24 @@ fun ClonedAppDetailsScreen(
                         modifier = Modifier.background(ElevatedSurface)
                     ) {
                         DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        tint = CyanAccent,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Duplicate App (+1)", color = PrimaryText)
+                                }
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                viewModel.duplicateClone(clone)
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Rename", color = PrimaryText) },
                             onClick = {
                                 menuExpanded = false
@@ -187,6 +207,7 @@ fun ClonedAppDetailsScreen(
             ) {
                 AppIconView(
                     iconKey = clone.iconKey,
+                    packageName = clone.packageName,
                     size = 90.dp,
                     cloneBadgeNumber = clone.cloneNumber,
                     isPrivateSpace = clone.isPrivateSpace
@@ -229,7 +250,7 @@ fun ClonedAppDetailsScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (clone.isPrivateSpace) "Isolated (Private Space)" else "Sandboxed (Ready)",
+                        text = if (clone.isPrivateSpace) "Isolated Container (Private Space)" else "Isolated Session (Ready)",
                         fontSize = 12.sp,
                         color = SecondaryText
                     )
@@ -248,6 +269,16 @@ fun ClonedAppDetailsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // Duplicate App Button (+1 Copy)
+            SecondaryButton(
+                text = "Duplicate App (+1 Copy)",
+                icon = Icons.Default.ContentCopy,
+                onClick = { viewModel.duplicateClone(clone) },
+                testTag = "duplicate_app_details_button"
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             // Secondary Button: Rename Account
             SecondaryButton(
                 text = "Rename Account",
@@ -258,15 +289,25 @@ fun ClonedAppDetailsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Add Another Clone Button
+            // Customize Another Clone Button
             MulticlonxCard(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = CardBackground,
                 onClick = {
                     val catItem = uiState.catalogApps.find { it.packageName == clone.packageName }
-                    if (catItem != null) {
-                        viewModel.navigateTo(ScreenDestination.CreateClone(catItem))
-                    }
+                        ?: AppCatalogItem(
+                            name = clone.name,
+                            packageName = clone.packageName,
+                            category = clone.category,
+                            compatibility = clone.compatibility,
+                            description = "Supported for isolated container session.",
+                            iconKey = clone.iconKey,
+                            defaultStorageMb = clone.storageUsageMb,
+                            supportedMultiClones = true,
+                            isDeviceInstalled = true,
+                            webContainerUrl = clone.webContainerUrl
+                        )
+                    viewModel.navigateTo(ScreenDestination.CreateClone(catItem))
                 }
             ) {
                 Row(
@@ -285,7 +326,7 @@ fun ClonedAppDetailsScreen(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Add Another Clone",
+                            text = "Customize Another Clone",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = PrimaryText
@@ -435,7 +476,7 @@ fun ClonedAppDetailsScreen(
                 title = { Text("About This Clone", color = PrimaryText) },
                 text = {
                     Text(
-                        text = "This clone operates inside Multiclonx's sandboxed virtual application layer. It stores session keys, database files, and caches independently without conflicting with other accounts.",
+                        text = "This clone operates inside a dedicated isolated session container with private localStorage, independent session cookies, and dedicated storage partition. It runs independently without touching your device's primary app data.",
                         color = SecondaryText,
                         fontSize = 14.sp
                     )

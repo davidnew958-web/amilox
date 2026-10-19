@@ -42,6 +42,7 @@ import com.example.ui.screens.ComponentShowcaseScreen
 import com.example.ui.screens.CreateCloneScreen
 import com.example.ui.screens.ForgotPasswordScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.IsolatedContainerScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.PremiumScreen
 import com.example.ui.screens.PrivateSpaceScreen
@@ -54,6 +55,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SignInScreen
 import com.example.ui.screens.SignUpScreen
 import com.example.ui.screens.SplashScreen
+import com.example.ui.screens.UnsupportedNativeCloneDialog
 import com.example.ui.screens.VerifyEmailScreen
 import com.example.ui.theme.BorderColor
 import com.example.ui.theme.CyanAccent
@@ -258,6 +260,10 @@ fun MulticlonxApp(
                 is ScreenDestination.ComponentShowcase -> {
                     ComponentShowcaseScreen(viewModel = viewModel)
                 }
+
+                is ScreenDestination.IsolatedContainer -> {
+                    IsolatedContainerScreen(cloneId = dest.cloneId, viewModel = viewModel)
+                }
             }
         }
     }
@@ -265,35 +271,32 @@ fun MulticlonxApp(
     // Global Interactive Dialogs
     if (uiState.activeLaunchClone != null) {
         val clone = uiState.activeLaunchClone!!
-        SandboxLaunchDialog(
-            clone = clone,
-            onDismiss = { viewModel.dismissLaunchDialog() },
-            onConfirmedLaunch = {
-                viewModel.dismissLaunchDialog()
-                val packageManager = context.packageManager
-                val launchIntent = packageManager.getLaunchIntentForPackage(clone.packageName)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (clone.webContainerUrl != null) {
+            SandboxLaunchDialog(
+                clone = clone,
+                onDismiss = { viewModel.dismissLaunchDialog() },
+                onConfirmedLaunch = {
+                    viewModel.dismissLaunchDialog()
+                    viewModel.navigateTo(ScreenDestination.IsolatedContainer(clone.id))
+                }
+            )
+        } else {
+            UnsupportedNativeCloneDialog(
+                clone = clone,
+                onDismiss = { viewModel.dismissLaunchDialog() },
+                onOpenSettings = {
+                    viewModel.dismissLaunchDialog()
                     try {
-                        context.startActivity(launchIntent)
-                        viewModel.showToast("Launched ${clone.name} (${clone.accountLabel})")
-                    } catch (e: Exception) {
-                        viewModel.showToast("Failed to launch ${clone.name}: ${e.localizedMessage}")
-                    }
-                } else {
-                    try {
-                        val webUrl = "https://www.google.com/search?q=${java.net.URLEncoder.encode(clone.name, "UTF-8")}+login"
-                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(webUrl)).apply {
+                        val settingsIntent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
-                        context.startActivity(browserIntent)
-                        viewModel.showToast("Opened sandboxed session for ${clone.name} (${clone.accountLabel})")
+                        context.startActivity(settingsIntent)
                     } catch (e: Exception) {
-                        viewModel.showToast("Cloned container active for ${clone.name} (${clone.accountLabel})")
+                        viewModel.showToast("Could not open device settings.")
                     }
                 }
-            }
-        )
+            )
+        }
     }
 
     if (uiState.showDeleteConfirmDialogFor != null) {
